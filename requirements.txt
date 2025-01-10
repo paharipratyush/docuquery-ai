@@ -1,0 +1,13 @@
+langchain
+numpy
+streamlit
+langchain-community
+streamlit
+PyPDF2
+unstructured
+nltk
+sentence-transformers
+langchain-huggingface
+faiss-cpu
+python-docx
+validators
