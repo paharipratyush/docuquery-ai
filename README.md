@@ -58,13 +58,7 @@ huggingface_api_key = "your-api-key-here"
 ## Project Structure
 ```
 docuquery-ai/
-├── src/
-│   ├── config.py              # Configuration and constants
-│   ├── app.py                 # Main Streamlit application
-│   ├── processors/
-│   │   └── document_processor.py  # Document processing logic
-│   └── qa/
-│       └── question_answerer.py   # QA chain implementation
+├── app.py              # Complete code of the application
 ├── requirements.txt
 ├── README.md
 └── secret_api_keys.py         # API keys (not tracked in git)
