@@ -68,7 +68,7 @@ docuquery-ai/
 
 1. Start the application:
 ```bash
-streamlit run src/app.py
+streamlit run app.py
 ```
 
 2. Select input type:
