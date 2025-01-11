@@ -3,10 +3,6 @@ DocuQuery AI
 ----------------------------
 Highlighting document-based queries with AI-powered responses.
 Supports multiple document formats including PDF, DOCX, TXT, and URLs.
-
-Requirements:
-- See requirements.txt for dependencies
-- Hugging Face API key in secret_api_keys.py
 """
 
 import streamlit as st
@@ -28,6 +24,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_huggingface import HuggingFaceEndpoint
 from streamlit.runtime.uploaded_file_manager import UploadedFile
+from tqdm import tqdm
 
 # Initialize environment and configurations
 try:
@@ -65,19 +62,17 @@ class DocumentProcessor:
 
     def process_urls(self, urls: List[str]) -> List[str]:
         """Process URLs and extract text content."""
-        try:
-            texts = []
-            for url in urls:
-                if url.strip():  # Only process non-empty URLs
-                    try:
-                        loader = WebBaseLoader(url)
-                        documents = loader.load()
-                        texts.extend([doc.page_content for doc in documents])
-                    except Exception as e:
-                        st.warning(f"Error processing URL {url}: {str(e)}")
-            return texts
-        except Exception as e:
-            raise ValueError(f"Error processing URLs: {str(e)}")
+        texts = []
+        for url in tqdm(urls, desc="Processing URLs"):
+            if url.strip():  # Only process non-empty URLs
+                try:
+                    loader = WebBaseLoader(url)
+                    loader.requests_kwargs = {"timeout": URL_TIMEOUT}
+                    documents = loader.load()
+                    texts.extend([doc.page_content for doc in documents])
+                except Exception as e:
+                    st.warning(f"Error processing URL {url}: {str(e)}")
+        return texts
 
     def process_pdf(self, file: Union[BytesIO, UploadedFile]) -> str:
         """Process PDF file and extract text."""
@@ -91,19 +86,41 @@ class DocumentProcessor:
                 pdf_reader = PdfReader(file)
 
             text = ""
-            for idx, page in enumerate(pdf_reader.pages):
+            for page in pdf_reader.pages:
                 text += page.extract_text() + "\n"
             return text
         except Exception as e:
             raise ValueError(f"Error processing PDF: {str(e)}")
 
-    def create_vectorstore(self, texts: List[str]) -> FAISS:
-        """Create and return a FAISS vectorstore from the given texts."""
+    def process_docx(self, file: Union[BytesIO, UploadedFile]) -> str:
+        """Process DOCX file and extract text."""
+        try:
+            if isinstance(file, UploadedFile):
+                doc = Document(BytesIO(file.read()))
+            else:
+                doc = Document(file)
+            text = "\n".join([para.text for para in doc.paragraphs])
+            return text
+        except Exception as e:
+            raise ValueError(f"Error processing DOCX: {str(e)}")
+
+    def process_txt(self, file: Union[BytesIO, UploadedFile]) -> str:
+        """Process TXT file and extract text."""
+        try:
+            if isinstance(file, UploadedFile):
+                return file.read().decode("utf-8")
+            else:
+                return file.read().decode("utf-8")
+        except Exception as e:
+            raise ValueError(f"Error processing TXT: {str(e)}")
+
+    def create_vectorstore(self, texts: List[str], existing_vectorstore: Optional[FAISS] = None) -> FAISS:
+        """Create or update a FAISS vectorstore from the given texts."""
         try:
             text_splitter = CharacterTextSplitter(
                 separator="\n",
-                chunk_size=2000,
-                chunk_overlap=200,
+                chunk_size=CHUNK_SIZE,
+                chunk_overlap=CHUNK_OVERLAP,
                 length_function=len
             )
 
@@ -112,21 +129,22 @@ class DocumentProcessor:
             if not split_texts:
                 raise ValueError("No text chunks generated after splitting")
 
-            embeddings = HuggingFaceEmbeddings()
+            if existing_vectorstore:
+                existing_vectorstore.add_texts(split_texts)
+                return existing_vectorstore
+            else:
+                dimension = 768  # HuggingFace embedding dimension
+                index = faiss.IndexFlatL2(dimension)
 
-            # Create FAISS instance
-            dimension = 768  # HuggingFace embedding dimension
-            index = faiss.IndexFlatL2(dimension)
+                vector_store = FAISS(
+                    embedding_function=self.embeddings.embed_query,
+                    index=index,
+                    docstore=InMemoryDocstore(),
+                    index_to_docstore_id={}
+                )
 
-            vector_store = FAISS(
-                embedding_function=embeddings.embed_query,
-                index=index,
-                docstore=InMemoryDocstore(),
-                index_to_docstore_id={}
-            )
-
-            vector_store.add_texts(split_texts)
-            return vector_store
+                vector_store.add_texts(split_texts)
+                return vector_store
 
         except Exception as e:
             raise ValueError(f"Error creating vector store: {str(e)}")
@@ -212,11 +230,17 @@ def main():
                         texts = doc_processor.process_urls(input_data)
                     elif input_type == "PDF":
                         texts = [doc_processor.process_pdf(input_data)]
+                    elif input_type == "DOCX":
+                        texts = [doc_processor.process_docx(input_data)]
+                    elif input_type == "TXT":
+                        texts = [doc_processor.process_txt(input_data)]
                     else:
-                        # Handle other file types similarly...
                         texts = [input_data]
 
-                    vectorstore = doc_processor.create_vectorstore(texts)
+                    vectorstore = doc_processor.create_vectorstore(
+                        texts,
+                        existing_vectorstore=st.session_state.get("vectorstore")
+                    )
                     st.session_state["vectorstore"] = vectorstore
                     st.success("Processing complete! You can now ask questions.")
 
