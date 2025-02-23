@@ -171,4 +171,4 @@ cython_debug/
 .pypirc
 
 #secret_api_keys.py
-huggingface_api_key = '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'
+huggingface_api_key = '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'
